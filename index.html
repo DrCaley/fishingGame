@@ -129,6 +129,9 @@
             // Create trees
             createTrees();
 
+            // Create mountain ring
+            createMountains();
+
             // Controls
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
@@ -252,6 +255,36 @@
                 );
                 leaves.castShadow = true;
                 scene.add(leaves);
+            }
+        }
+
+        function createMountains() {
+            const mountainCount = 28;
+
+            for (let i = 0; i < mountainCount; i++) {
+                const angle = (i / mountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.1;
+                const radius = 120 + Math.random() * 40;
+                const height = 35 + Math.random() * 55;
+                const baseRadius = 18 + Math.random() * 18;
+
+                const mountainGeometry = new THREE.ConeGeometry(baseRadius, height, 8);
+                const mountainMaterial = new THREE.MeshLambertMaterial({ color: 0x5e6b72 });
+                const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
+                mountain.position.set(
+                    Math.cos(angle) * radius,
+                    height * 0.5 - 0.2,
+                    Math.sin(angle) * radius
+                );
+                mountain.rotation.y = Math.random() * Math.PI;
+                mountain.castShadow = true;
+                mountain.receiveShadow = true;
+                scene.add(mountain);
+
+                const snowGeometry = new THREE.ConeGeometry(baseRadius * 0.35, height * 0.28, 8);
+                const snowMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f6fb });
+                const snowCap = new THREE.Mesh(snowGeometry, snowMaterial);
+                snowCap.position.set(0, height * 0.36, 0);
+                mountain.add(snowCap);
             }
         }
 
