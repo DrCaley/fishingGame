@@ -58,9 +58,16 @@
         let spears = [];
         let spearTraces = [];
         let realisticFishTemplate = null;
+        let worldChunks = new Map();
+        let activeChunkX = null;
+        let activeChunkZ = null;
         let score = 0;
         let gameStarted = false;
         let yaw = 0, pitch = 0;
+
+        const TILE_SIZE = 340;
+        const LAKE_RADIUS = 80;
+        const CHUNK_LOAD_RADIUS = 1;
 
         // Initialize
         init();
@@ -70,7 +77,7 @@
             // Scene
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB);
-            scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+            scene.fog = new THREE.Fog(0x87CEEB, 90, 620);
 
             // Camera
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -91,46 +98,11 @@
             sunLight.castShadow = true;
             scene.add(sunLight);
 
-            // Ground (shore)
-            const groundGeometry = new THREE.CircleGeometry(150, 64);
-            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x3d9140 });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-            ground.rotation.x = -Math.PI / 2;
-            ground.position.y = -0.1;
-            ground.receiveShadow = true;
-            scene.add(ground);
-
-            // Lake water (transparent)
-            const waterGeometry = new THREE.CircleGeometry(80, 64);
-            const waterMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xcff6ff,
-                transparent: true,
-                opacity: 0.03,
-                shininess: 8,
-                depthWrite: false,
-                side: THREE.DoubleSide
-            });
-            const water = new THREE.Mesh(waterGeometry, waterMaterial);
-            water.rotation.x = -Math.PI / 2;
-            water.position.y = 0;
-            scene.add(water);
-
-            // Lake bed
-            const bedGeometry = new THREE.CircleGeometry(80, 64);
-            const bedMaterial = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
-            const bed = new THREE.Mesh(bedGeometry, bedMaterial);
-            bed.rotation.x = -Math.PI / 2;
-            bed.position.y = -8;
-            scene.add(bed);
+            // Streamed mountain-lake world
+            updateWorldChunks(true);
 
             // Create fish
             loadRealisticFishModel();
-
-            // Create trees
-            createTrees();
-
-            // Create mountain ring
-            createMountains();
 
             // Controls
             document.addEventListener('keydown', onKeyDown);
@@ -156,6 +128,154 @@
                     createFish();
                 }
             );
+        }
+
+        function getChunkKey(chunkX, chunkZ) {
+            return `${chunkX},${chunkZ}`;
+        }
+
+        function getLakeCenterForPosition(x, z) {
+            return {
+                x: Math.round(x / TILE_SIZE) * TILE_SIZE,
+                z: Math.round(z / TILE_SIZE) * TILE_SIZE
+            };
+        }
+
+        function seededRandom(seed) {
+            const value = Math.sin(seed * 127.1) * 43758.5453123;
+            return value - Math.floor(value);
+        }
+
+        function createChunk(chunkX, chunkZ) {
+            const key = getChunkKey(chunkX, chunkZ);
+            if (worldChunks.has(key)) return;
+
+            const centerX = chunkX * TILE_SIZE;
+            const centerZ = chunkZ * TILE_SIZE;
+            const chunkGroup = new THREE.Group();
+
+            const groundGeometry = new THREE.PlaneGeometry(TILE_SIZE, TILE_SIZE, 1, 1);
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x3d9140 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.set(centerX, -0.11, centerZ);
+            ground.receiveShadow = true;
+            chunkGroup.add(ground);
+
+            const waterGeometry = new THREE.CircleGeometry(LAKE_RADIUS, 64);
+            const waterMaterial = new THREE.MeshPhongMaterial({
+                color: 0xcff6ff,
+                transparent: true,
+                opacity: 0.03,
+                shininess: 8,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+            const water = new THREE.Mesh(waterGeometry, waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            water.position.set(centerX, 0, centerZ);
+            chunkGroup.add(water);
+
+            const bedGeometry = new THREE.CircleGeometry(LAKE_RADIUS, 64);
+            const bedMaterial = new THREE.MeshLambertMaterial({ color: 0x8B7355 });
+            const bed = new THREE.Mesh(bedGeometry, bedMaterial);
+            bed.rotation.x = -Math.PI / 2;
+            bed.position.set(centerX, -8, centerZ);
+            chunkGroup.add(bed);
+
+            createTreesForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ);
+            createMountainsForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ);
+
+            scene.add(chunkGroup);
+            worldChunks.set(key, chunkGroup);
+        }
+
+        function createTreesForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ) {
+            const treeCount = 42;
+            for (let i = 0; i < treeCount; i++) {
+                const seed = chunkX * 991 + chunkZ * 577 + i * 37;
+                const angle = seededRandom(seed) * Math.PI * 2;
+                const radius = LAKE_RADIUS + 20 + seededRandom(seed + 1) * 85;
+
+                const x = centerX + Math.cos(angle) * radius;
+                const z = centerZ + Math.sin(angle) * radius;
+
+                const trunkHeight = 4 + seededRandom(seed + 2) * 3;
+                const trunkGeometry = new THREE.CylinderGeometry(0.45, 0.7, trunkHeight, 8);
+                const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+                trunk.position.set(x, trunkHeight * 0.5, z);
+                trunk.castShadow = true;
+                chunkGroup.add(trunk);
+
+                const leavesGeometry = new THREE.ConeGeometry(2.6 + seededRandom(seed + 3) * 1.6, 6.5 + seededRandom(seed + 4) * 2.5, 8);
+                const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+                const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+                leaves.position.set(x, trunkHeight + 3.3, z);
+                leaves.castShadow = true;
+                chunkGroup.add(leaves);
+            }
+        }
+
+        function createMountainsForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ) {
+            const mountainCount = 20;
+            for (let i = 0; i < mountainCount; i++) {
+                const seed = chunkX * 1301 + chunkZ * 719 + i * 53;
+                const angle = (i / mountainCount) * Math.PI * 2 + (seededRandom(seed) - 0.5) * 0.24;
+                const radius = LAKE_RADIUS + 75 + seededRandom(seed + 1) * 52;
+                const height = 28 + seededRandom(seed + 2) * 62;
+                const baseRadius = 12 + seededRandom(seed + 3) * 22;
+
+                const mountainGeometry = new THREE.ConeGeometry(baseRadius, height, 8);
+                const mountainMaterial = new THREE.MeshLambertMaterial({ color: 0x5e6b72 });
+                const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
+                mountain.position.set(
+                    centerX + Math.cos(angle) * radius,
+                    height * 0.5 - 0.2,
+                    centerZ + Math.sin(angle) * radius
+                );
+                mountain.rotation.y = seededRandom(seed + 4) * Math.PI;
+                mountain.castShadow = true;
+                mountain.receiveShadow = true;
+                chunkGroup.add(mountain);
+
+                const snowGeometry = new THREE.ConeGeometry(baseRadius * 0.35, height * 0.28, 8);
+                const snowMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f6fb });
+                const snowCap = new THREE.Mesh(snowGeometry, snowMaterial);
+                snowCap.position.set(0, height * 0.36, 0);
+                mountain.add(snowCap);
+            }
+        }
+
+        function updateWorldChunks(force = false) {
+            const chunkX = Math.round(camera.position.x / TILE_SIZE);
+            const chunkZ = Math.round(camera.position.z / TILE_SIZE);
+
+            if (!force && chunkX === activeChunkX && chunkZ === activeChunkZ) {
+                return;
+            }
+
+            activeChunkX = chunkX;
+            activeChunkZ = chunkZ;
+
+            const neededKeys = new Set();
+
+            for (let dx = -CHUNK_LOAD_RADIUS; dx <= CHUNK_LOAD_RADIUS; dx++) {
+                for (let dz = -CHUNK_LOAD_RADIUS; dz <= CHUNK_LOAD_RADIUS; dz++) {
+                    const cx = chunkX + dx;
+                    const cz = chunkZ + dz;
+                    const key = getChunkKey(cx, cz);
+                    neededKeys.add(key);
+                    createChunk(cx, cz);
+                }
+            }
+
+            for (const [key, chunkGroup] of worldChunks.entries()) {
+                if (!neededKeys.has(key)) {
+                    scene.remove(chunkGroup);
+                    worldChunks.delete(key);
+                }
+            }
         }
 
         function createFish() {
@@ -199,13 +319,14 @@
                     fishMesh.add(tail);
                 }
 
-                // Position fish in the lake
+                // Position fish in the local lake
+                const lakeCenter = getLakeCenterForPosition(camera.position.x, camera.position.z);
                 const angle = Math.random() * Math.PI * 2;
                 const radius = 10 + Math.random() * 60;
                 fishMesh.position.set(
-                    Math.cos(angle) * radius,
+                    lakeCenter.x + Math.cos(angle) * radius,
                     -0.4 - Math.random() * 1.6,
-                    Math.sin(angle) * radius
+                    lakeCenter.z + Math.sin(angle) * radius
                 );
 
                 // Fish data
@@ -219,7 +340,9 @@
                     minDepth: -0.4 - Math.random() * 1.2,
                     maxDepth: -1.8 - Math.random() * 2.4,
                     depthPhase: Math.random() * Math.PI * 2,
-                    nextTurnAt: performance.now() + 300 + Math.random() * 1400
+                    nextTurnAt: performance.now() + 300 + Math.random() * 1400,
+                    lakeCenterX: lakeCenter.x,
+                    lakeCenterZ: lakeCenter.z
                 };
 
                 fish.push(fishMesh);
@@ -227,66 +350,8 @@
             }
         }
 
-        function createTrees() {
-            for (let i = 0; i < 80; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const radius = 90 + Math.random() * 50;
-                
-                // Trunk
-                const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.7, 5, 8);
-                const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
-                const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
-                trunk.position.set(
-                    Math.cos(angle) * radius,
-                    2.5,
-                    Math.sin(angle) * radius
-                );
-                trunk.castShadow = true;
-                scene.add(trunk);
-
-                // Leaves
-                const leavesGeometry = new THREE.ConeGeometry(3, 8, 8);
-                const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
-                const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
-                leaves.position.set(
-                    Math.cos(angle) * radius,
-                    9,
-                    Math.sin(angle) * radius
-                );
-                leaves.castShadow = true;
-                scene.add(leaves);
-            }
-        }
-
-        function createMountains() {
-            const mountainCount = 28;
-
-            for (let i = 0; i < mountainCount; i++) {
-                const angle = (i / mountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.1;
-                const radius = 120 + Math.random() * 40;
-                const height = 35 + Math.random() * 55;
-                const baseRadius = 18 + Math.random() * 18;
-
-                const mountainGeometry = new THREE.ConeGeometry(baseRadius, height, 8);
-                const mountainMaterial = new THREE.MeshLambertMaterial({ color: 0x5e6b72 });
-                const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
-                mountain.position.set(
-                    Math.cos(angle) * radius,
-                    height * 0.5 - 0.2,
-                    Math.sin(angle) * radius
-                );
-                mountain.rotation.y = Math.random() * Math.PI;
-                mountain.castShadow = true;
-                mountain.receiveShadow = true;
-                scene.add(mountain);
-
-                const snowGeometry = new THREE.ConeGeometry(baseRadius * 0.35, height * 0.28, 8);
-                const snowMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f6fb });
-                const snowCap = new THREE.Mesh(snowGeometry, snowMaterial);
-                snowCap.position.set(0, height * 0.36, 0);
-                mountain.add(snowCap);
-            }
-        }
+        function createTrees() {}
+        function createMountains() {}
 
         function onKeyDown(event) {
             switch (event.code) {
@@ -464,12 +529,13 @@
                 fishMesh.add(tail);
             }
 
+            const lakeCenter = getLakeCenterForPosition(camera.position.x, camera.position.z);
             const angle = Math.random() * Math.PI * 2;
             const radius = 10 + Math.random() * 60;
             fishMesh.position.set(
-                Math.cos(angle) * radius,
+                lakeCenter.x + Math.cos(angle) * radius,
                 -0.4 - Math.random() * 1.6,
-                Math.sin(angle) * radius
+                lakeCenter.z + Math.sin(angle) * radius
             );
 
             fishMesh.userData = {
@@ -482,7 +548,9 @@
                 minDepth: -0.4 - Math.random() * 1.2,
                 maxDepth: -1.8 - Math.random() * 2.4,
                 depthPhase: Math.random() * Math.PI * 2,
-                nextTurnAt: performance.now() + 300 + Math.random() * 1400
+                nextTurnAt: performance.now() + 300 + Math.random() * 1400,
+                lakeCenterX: lakeCenter.x,
+                lakeCenterZ: lakeCenter.z
             };
 
             fish.push(fishMesh);
@@ -527,6 +595,8 @@
                 // Keep camera at eye level
                 camera.position.y = 5;
 
+                updateWorldChunks();
+
                 velocity.x *= 0.9;
                 velocity.z *= 0.9;
 
@@ -549,13 +619,15 @@
                     const depthRange = f.userData.minDepth - f.userData.maxDepth;
                     f.position.y = f.userData.minDepth - ((Math.sin(now * 0.0016 + f.userData.depthPhase) + 1) * 0.5 * depthRange);
 
-                    // Keep fish in lake with random bounce
-                    const dist = Math.sqrt(f.position.x ** 2 + f.position.z ** 2);
-                    if (dist > 70) {
-                        const toCenter = Math.atan2(-f.position.z, -f.position.x);
+                    // Keep fish in their local lake with random bounce
+                    const localX = f.position.x - f.userData.lakeCenterX;
+                    const localZ = f.position.z - f.userData.lakeCenterZ;
+                    const dist = Math.sqrt(localX ** 2 + localZ ** 2);
+                    if (dist > LAKE_RADIUS - 10) {
+                        const toCenter = Math.atan2(f.userData.lakeCenterZ - f.position.z, f.userData.lakeCenterX - f.position.x);
                         f.userData.angle = toCenter + (Math.random() - 0.5) * 0.5;
-                        f.position.x *= 0.97;
-                        f.position.z *= 0.97;
+                        f.position.x = f.userData.lakeCenterX + localX * 0.96;
+                        f.position.z = f.userData.lakeCenterZ + localZ * 0.96;
                     }
                 });
 
