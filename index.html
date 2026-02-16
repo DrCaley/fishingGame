@@ -58,6 +58,7 @@
         let spears = [];
         let spearTraces = [];
         let realisticFishTemplate = null;
+        let lakeFishByChunk = new Map();
         let worldChunks = new Map();
         let activeChunkX = null;
         let activeChunkZ = null;
@@ -68,6 +69,7 @@
         const TILE_SIZE = 340;
         const LAKE_RADIUS = 80;
         const CHUNK_LOAD_RADIUS = 1;
+        const FISH_PER_LAKE = 8;
 
         // Initialize
         init();
@@ -188,6 +190,10 @@
 
             scene.add(chunkGroup);
             worldChunks.set(key, chunkGroup);
+
+            if (!lakeFishByChunk.has(key)) {
+                spawnFishInLake(centerX, centerZ, key, FISH_PER_LAKE);
+            }
         }
 
         function createTreesForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ) {
@@ -272,81 +278,36 @@
 
             for (const [key, chunkGroup] of worldChunks.entries()) {
                 if (!neededKeys.has(key)) {
+                    const lakeFish = lakeFishByChunk.get(key);
+                    if (lakeFish) {
+                        lakeFish.forEach((fishMesh) => scene.remove(fishMesh));
+                        fish = fish.filter((fishMesh) => !lakeFish.includes(fishMesh));
+                        lakeFishByChunk.delete(key);
+                    }
                     scene.remove(chunkGroup);
                     worldChunks.delete(key);
                 }
             }
         }
 
+        function spawnFishInLake(lakeCenterX, lakeCenterZ, chunkKey, count) {
+            if (lakeFishByChunk.has(chunkKey)) return;
+
+            const lakeFish = [];
+            for (let i = 0; i < count; i++) {
+                lakeFish.push(createSingleFish(lakeCenterX, lakeCenterZ, chunkKey));
+            }
+            lakeFishByChunk.set(chunkKey, lakeFish);
+        }
+
         function createFish() {
-            const fishColors = [0x4169E1, 0x228B22, 0xFF6347, 0x8B4513, 0xFFD700];
-            const fishNames = ['Bluegill', 'Bass', 'Trout', 'Catfish', 'Golden Carp'];
-            const fishPoints = [10, 25, 30, 40, 100];
+            for (const key of worldChunks.keys()) {
+                if (lakeFishByChunk.has(key)) continue;
 
-            for (let i = 0; i < 20; i++) {
-                const colorIndex = Math.random() < 0.1 ? 4 : Math.floor(Math.random() * 4);
-                let fishMesh;
-
-                if (realisticFishTemplate) {
-                    fishMesh = realisticFishTemplate.clone(true);
-                    const bounds = new THREE.Box3().setFromObject(fishMesh);
-                    const size = new THREE.Vector3();
-                    bounds.getSize(size);
-                    const maxSide = Math.max(size.x, size.y, size.z) || 1;
-                    const targetSize = 6;
-                    const scale = targetSize / maxSide;
-                    fishMesh.scale.setScalar(scale);
-
-                    fishMesh.traverse((node) => {
-                        if (node.isMesh) {
-                            node.castShadow = true;
-                        }
-                    });
-                } else {
-                    const bodyGeometry = new THREE.ConeGeometry(1.5, 6, 10);
-                    bodyGeometry.rotateZ(Math.PI / 2);
-                    const bodyMaterial = new THREE.MeshPhongMaterial({
-                        color: fishColors[colorIndex],
-                        shininess: 140,
-                        emissive: fishColors[colorIndex],
-                        emissiveIntensity: 0.35
-                    });
-                    fishMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
-                    const tailGeometry = new THREE.ConeGeometry(1.2, 2, 6);
-                    tailGeometry.rotateZ(-Math.PI / 2);
-                    const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
-                    tail.position.x = -3.8;
-                    fishMesh.add(tail);
-                }
-
-                // Position fish in the local lake
-                const lakeCenter = getLakeCenterForPosition(camera.position.x, camera.position.z);
-                const angle = Math.random() * Math.PI * 2;
-                const radius = 10 + Math.random() * 60;
-                fishMesh.position.set(
-                    lakeCenter.x + Math.cos(angle) * radius,
-                    -0.4 - Math.random() * 1.6,
-                    lakeCenter.z + Math.sin(angle) * radius
-                );
-
-                // Fish data
-                fishMesh.userData = {
-                    isFishRoot: true,
-                    name: fishNames[colorIndex],
-                    points: fishPoints[colorIndex],
-                    speed: 0.04 + Math.random() * 0.06,
-                    angle: Math.random() * Math.PI * 2,
-                    turnSpeed: 0.01 + Math.random() * 0.025,
-                    minDepth: -0.4 - Math.random() * 1.2,
-                    maxDepth: -1.8 - Math.random() * 2.4,
-                    depthPhase: Math.random() * Math.PI * 2,
-                    nextTurnAt: performance.now() + 300 + Math.random() * 1400,
-                    lakeCenterX: lakeCenter.x,
-                    lakeCenterZ: lakeCenter.z
-                };
-
-                fish.push(fishMesh);
-                scene.add(fishMesh);
+                const [chunkX, chunkZ] = key.split(',').map(Number);
+                const lakeCenterX = chunkX * TILE_SIZE;
+                const lakeCenterZ = chunkZ * TILE_SIZE;
+                spawnFishInLake(lakeCenterX, lakeCenterZ, key, FISH_PER_LAKE);
             }
         }
 
@@ -405,16 +366,32 @@
                 if (!hitFish) {
                     return;
                 }
+
+                const lakeCenterX = hitFish.userData.lakeCenterX;
+                const lakeCenterZ = hitFish.userData.lakeCenterZ;
+                const chunkKey = hitFish.userData.chunkKey;
+
                 score += hitFish.userData.points;
                 document.getElementById('score').textContent = score;
                 
                 // Remove fish
                 scene.remove(hitFish);
                 fish = fish.filter(f => f !== hitFish);
+                if (chunkKey && lakeFishByChunk.has(chunkKey)) {
+                    const lakeFish = lakeFishByChunk.get(chunkKey).filter(f => f !== hitFish);
+                    lakeFishByChunk.set(chunkKey, lakeFish);
+                }
                 
                 // Respawn after delay
                 setTimeout(() => {
-                    createSingleFish();
+                    if (!chunkKey || worldChunks.has(chunkKey)) {
+                        const respawnedFish = createSingleFish(lakeCenterX, lakeCenterZ, chunkKey);
+                        if (chunkKey) {
+                            const lakeFish = lakeFishByChunk.get(chunkKey) || [];
+                            lakeFish.push(respawnedFish);
+                            lakeFishByChunk.set(chunkKey, lakeFish);
+                        }
+                    }
                 }, 3000);
             }
         }
@@ -489,10 +466,22 @@
             }
         }
 
-        function createSingleFish() {
+        function createSingleFish(lakeCenterX = null, lakeCenterZ = null, chunkKey = null) {
             const fishColors = [0x4169E1, 0x228B22, 0xFF6347, 0x8B4513, 0xFFD700];
             const fishNames = ['Bluegill', 'Bass', 'Trout', 'Catfish', 'Golden Carp'];
             const fishPoints = [10, 25, 30, 40, 100];
+
+            if (lakeCenterX === null || lakeCenterZ === null) {
+                const lakeCenter = getLakeCenterForPosition(camera.position.x, camera.position.z);
+                lakeCenterX = lakeCenter.x;
+                lakeCenterZ = lakeCenter.z;
+            }
+
+            if (!chunkKey) {
+                const chunkX = Math.round(lakeCenterX / TILE_SIZE);
+                const chunkZ = Math.round(lakeCenterZ / TILE_SIZE);
+                chunkKey = getChunkKey(chunkX, chunkZ);
+            }
 
             const colorIndex = Math.random() < 0.1 ? 4 : Math.floor(Math.random() * 4);
             let fishMesh;
@@ -529,13 +518,12 @@
                 fishMesh.add(tail);
             }
 
-            const lakeCenter = getLakeCenterForPosition(camera.position.x, camera.position.z);
             const angle = Math.random() * Math.PI * 2;
             const radius = 10 + Math.random() * 60;
             fishMesh.position.set(
-                lakeCenter.x + Math.cos(angle) * radius,
+                lakeCenterX + Math.cos(angle) * radius,
                 -0.4 - Math.random() * 1.6,
-                lakeCenter.z + Math.sin(angle) * radius
+                lakeCenterZ + Math.sin(angle) * radius
             );
 
             fishMesh.userData = {
@@ -549,12 +537,15 @@
                 maxDepth: -1.8 - Math.random() * 2.4,
                 depthPhase: Math.random() * Math.PI * 2,
                 nextTurnAt: performance.now() + 300 + Math.random() * 1400,
-                lakeCenterX: lakeCenter.x,
-                lakeCenterZ: lakeCenter.z
+                lakeCenterX,
+                lakeCenterZ,
+                chunkKey
             };
 
             fish.push(fishMesh);
             scene.add(fishMesh);
+
+            return fishMesh;
         }
 
         function onResize() {
