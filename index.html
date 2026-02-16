@@ -55,6 +55,7 @@
         let velocity = new THREE.Vector3();
         let direction = new THREE.Vector3();
         let fish = [];
+        let bears = [];
         let spears = [];
         let spearTraces = [];
         let realisticFishTemplate = null;
@@ -187,6 +188,7 @@
 
             createTreesForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ);
             createMountainsForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ);
+            createBearForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ, key);
 
             scene.add(chunkGroup);
             worldChunks.set(key, chunkGroup);
@@ -253,6 +255,98 @@
             }
         }
 
+        function createBearForChunk(chunkGroup, chunkX, chunkZ, centerX, centerZ, chunkKey) {
+            const seed = chunkX * 1733 + chunkZ * 883;
+            const startAngle = seededRandom(seed) * Math.PI * 2;
+            const patrolRadius = LAKE_RADIUS + 18 + seededRandom(seed + 1) * 10;
+
+            const bear = new THREE.Group();
+
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(3.2, 1.8, 1.8),
+                new THREE.MeshLambertMaterial({ color: 0x5b3a1e })
+            );
+            body.position.set(0, 1.5, 0);
+            body.castShadow = true;
+            bear.add(body);
+
+            const head = new THREE.Mesh(
+                new THREE.BoxGeometry(1.2, 1.1, 1.1),
+                new THREE.MeshLambertMaterial({ color: 0x654321 })
+            );
+            head.position.set(1.9, 2.0, 0);
+            head.castShadow = true;
+            bear.add(head);
+
+            const snout = new THREE.Mesh(
+                new THREE.BoxGeometry(0.55, 0.45, 0.55),
+                new THREE.MeshLambertMaterial({ color: 0x8b6b4a })
+            );
+            snout.position.set(2.45, 1.85, 0);
+            snout.castShadow = true;
+            bear.add(snout);
+
+            const earGeometry = new THREE.SphereGeometry(0.22, 8, 8);
+            const earMaterial = new THREE.MeshLambertMaterial({ color: 0x5b3a1e });
+            const leftEar = new THREE.Mesh(earGeometry, earMaterial);
+            leftEar.position.set(1.6, 2.55, -0.38);
+            leftEar.castShadow = true;
+            bear.add(leftEar);
+            const rightEar = new THREE.Mesh(earGeometry, earMaterial);
+            rightEar.position.set(1.6, 2.55, 0.38);
+            rightEar.castShadow = true;
+            bear.add(rightEar);
+
+            const legGeometry = new THREE.CylinderGeometry(0.22, 0.24, 1.1, 8);
+            const legMaterial = new THREE.MeshLambertMaterial({ color: 0x3f2a18 });
+            const legPositions = [
+                [1.0, 0.65, -0.55],
+                [1.0, 0.65, 0.55],
+                [-1.0, 0.65, -0.55],
+                [-1.0, 0.65, 0.55]
+            ];
+            legPositions.forEach((pos) => {
+                const leg = new THREE.Mesh(legGeometry, legMaterial);
+                leg.position.set(pos[0], pos[1], pos[2]);
+                leg.castShadow = true;
+                bear.add(leg);
+            });
+
+            bear.userData = {
+                isBear: true,
+                chunkKey,
+                lakeCenterX: centerX,
+                lakeCenterZ: centerZ,
+                patrolRadius,
+                angle: startAngle,
+                speed: 0.0025 + seededRandom(seed + 2) * 0.0015,
+                bobPhase: seededRandom(seed + 3) * Math.PI * 2
+            };
+
+            bear.position.set(
+                centerX + Math.cos(startAngle) * patrolRadius,
+                0,
+                centerZ + Math.sin(startAngle) * patrolRadius
+            );
+            bear.rotation.y = -startAngle + Math.PI * 0.5;
+
+            chunkGroup.add(bear);
+            bears.push(bear);
+        }
+
+        function updateBears(elapsedMs) {
+            bears.forEach((bear) => {
+                bear.userData.angle += bear.userData.speed;
+
+                const x = bear.userData.lakeCenterX + Math.cos(bear.userData.angle) * bear.userData.patrolRadius;
+                const z = bear.userData.lakeCenterZ + Math.sin(bear.userData.angle) * bear.userData.patrolRadius;
+                bear.position.x = x;
+                bear.position.z = z;
+                bear.position.y = Math.sin(elapsedMs * 0.004 + bear.userData.bobPhase) * 0.06;
+                bear.rotation.y = -bear.userData.angle + Math.PI * 0.5;
+            });
+        }
+
         function updateWorldChunks(force = false) {
             const chunkX = Math.round(camera.position.x / TILE_SIZE);
             const chunkZ = Math.round(camera.position.z / TILE_SIZE);
@@ -278,6 +372,13 @@
 
             for (const [key, chunkGroup] of worldChunks.entries()) {
                 if (!neededKeys.has(key)) {
+                    bears = bears.filter((bear) => {
+                        if (bear.userData.chunkKey === key) {
+                            return false;
+                        }
+                        return true;
+                    });
+
                     const lakeFish = lakeFishByChunk.get(key);
                     if (lakeFish) {
                         lakeFish.forEach((fishMesh) => scene.remove(fishMesh));
@@ -621,6 +722,8 @@
                         f.position.z = f.userData.lakeCenterZ + localZ * 0.96;
                     }
                 });
+
+                updateBears(performance.now());
 
                 updateSpears();
             }
