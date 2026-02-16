@@ -55,6 +55,7 @@
         let direction = new THREE.Vector3();
         let fish = [];
         let spears = [];
+        let spearTraces = [];
         let score = 0;
         let gameStarted = false;
         let yaw = 0, pitch = 0;
@@ -246,7 +247,6 @@
                 gameStarted = true;
                 document.getElementById('instructions').style.display = 'none';
                 document.body.requestPointerLock();
-                return;
             }
 
             createSpearProjectile();
@@ -275,17 +275,17 @@
         function createSpearProjectile() {
             const spearGroup = new THREE.Group();
 
-            const shaftGeometry = new THREE.CylinderGeometry(0.05, 0.06, 3.2, 8);
-            const shaftMaterial = new THREE.MeshPhongMaterial({ color: 0x8b5a2b });
+            const shaftGeometry = new THREE.CylinderGeometry(0.12, 0.14, 4.5, 10);
+            const shaftMaterial = new THREE.MeshPhongMaterial({ color: 0xd28a45, emissive: 0x331100 });
             const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
             shaft.rotation.z = Math.PI / 2;
             spearGroup.add(shaft);
 
-            const tipGeometry = new THREE.ConeGeometry(0.12, 0.5, 10);
-            const tipMaterial = new THREE.MeshPhongMaterial({ color: 0xd9d9d9, emissive: 0x333333 });
+            const tipGeometry = new THREE.ConeGeometry(0.28, 0.9, 12);
+            const tipMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0x6699ff });
             const tip = new THREE.Mesh(tipGeometry, tipMaterial);
             tip.rotation.z = -Math.PI / 2;
-            tip.position.x = 1.8;
+            tip.position.x = 2.5;
             spearGroup.add(tip);
 
             const start = camera.position.clone();
@@ -294,9 +294,20 @@
             spearGroup.position.copy(start).add(direction.clone().multiplyScalar(1.5));
             spearGroup.lookAt(spearGroup.position.clone().add(direction));
             spearGroup.userData = {
-                velocity: direction.multiplyScalar(2.2),
+                velocity: direction.multiplyScalar(1.5),
                 life: 0
             };
+
+            const traceMaterial = new THREE.LineBasicMaterial({ color: 0xffff66, transparent: true, opacity: 0.95 });
+            const tracePoints = [
+                start.clone().add(direction.clone().multiplyScalar(1.2)),
+                start.clone().add(direction.clone().multiplyScalar(45))
+            ];
+            const traceGeometry = new THREE.BufferGeometry().setFromPoints(tracePoints);
+            const traceLine = new THREE.Line(traceGeometry, traceMaterial);
+            traceLine.userData = { life: 0 };
+            scene.add(traceLine);
+            spearTraces.push(traceLine);
 
             scene.add(spearGroup);
             spears.push(spearGroup);
@@ -308,9 +319,20 @@
                 spear.position.add(spear.userData.velocity);
                 spear.userData.life += 1;
 
-                if (spear.userData.life > 45) {
+                if (spear.userData.life > 70) {
                     scene.remove(spear);
                     spears.splice(i, 1);
+                }
+            }
+
+            for (let i = spearTraces.length - 1; i >= 0; i--) {
+                const trace = spearTraces[i];
+                trace.userData.life += 1;
+                trace.material.opacity = Math.max(0, 0.95 - trace.userData.life * 0.08);
+
+                if (trace.userData.life > 12) {
+                    scene.remove(trace);
+                    spearTraces.splice(i, 1);
                 }
             }
         }
