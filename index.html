@@ -103,10 +103,10 @@
             // Lake water (transparent)
             const waterGeometry = new THREE.CircleGeometry(80, 64);
             const waterMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x9fe8ff,
+                color: 0xcff6ff,
                 transparent: true,
-                opacity: 0.06,
-                shininess: 20,
+                opacity: 0.03,
+                shininess: 8,
                 depthWrite: false,
                 side: THREE.DoubleSide
             });
@@ -341,7 +341,7 @@
             const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
 
             spearGroup.position.copy(start).add(direction.clone().multiplyScalar(1.5));
-            spearGroup.lookAt(spearGroup.position.clone().add(direction));
+            spearGroup.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction.clone());
             spearGroup.userData = {
                 velocity: direction.multiplyScalar(1.5),
                 life: 0
@@ -367,6 +367,11 @@
                 const spear = spears[i];
                 spear.position.add(spear.userData.velocity);
                 spear.userData.life += 1;
+
+                if (spear.userData.velocity.lengthSq() > 0) {
+                    const spearDir = spear.userData.velocity.clone().normalize();
+                    spear.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), spearDir);
+                }
 
                 if (spear.userData.life > 70) {
                     scene.remove(spear);
