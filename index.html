@@ -47,6 +47,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         // Game state
         let scene, camera, renderer;
@@ -56,6 +57,7 @@
         let fish = [];
         let spears = [];
         let spearTraces = [];
+        let realisticFishTemplate = null;
         let score = 0;
         let gameStarted = false;
         let yaw = 0, pitch = 0;
@@ -122,7 +124,7 @@
             scene.add(bed);
 
             // Create fish
-            createFish();
+            loadRealisticFishModel();
 
             // Create trees
             createTrees();
@@ -135,32 +137,64 @@
             window.addEventListener('resize', onResize);
         }
 
+        function loadRealisticFishModel() {
+            const loader = new THREE.GLTFLoader();
+            const modelUrl = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/BarramundiFish/glTF-Binary/BarramundiFish.glb';
+
+            loader.load(
+                modelUrl,
+                (gltf) => {
+                    realisticFishTemplate = gltf.scene;
+                    createFish();
+                },
+                undefined,
+                () => {
+                    realisticFishTemplate = null;
+                    createFish();
+                }
+            );
+        }
+
         function createFish() {
             const fishColors = [0x4169E1, 0x228B22, 0xFF6347, 0x8B4513, 0xFFD700];
             const fishNames = ['Bluegill', 'Bass', 'Trout', 'Catfish', 'Golden Carp'];
             const fishPoints = [10, 25, 30, 40, 100];
 
             for (let i = 0; i < 20; i++) {
-                // Fish body
-                const bodyGeometry = new THREE.ConeGeometry(1.5, 6, 10);
-                bodyGeometry.rotateZ(Math.PI / 2);
-                
                 const colorIndex = Math.random() < 0.1 ? 4 : Math.floor(Math.random() * 4);
-                const bodyMaterial = new THREE.MeshPhongMaterial({ 
-                    color: fishColors[colorIndex],
-                    shininess: 140,
-                    emissive: fishColors[colorIndex],
-                    emissiveIntensity: 0.35
-                });
-                
-                const fishMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
-                
-                // Tail
-                const tailGeometry = new THREE.ConeGeometry(1.2, 2, 6);
-                tailGeometry.rotateZ(-Math.PI / 2);
-                const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
-                tail.position.x = -3.8;
-                fishMesh.add(tail);
+                let fishMesh;
+
+                if (realisticFishTemplate) {
+                    fishMesh = realisticFishTemplate.clone(true);
+                    const bounds = new THREE.Box3().setFromObject(fishMesh);
+                    const size = new THREE.Vector3();
+                    bounds.getSize(size);
+                    const maxSide = Math.max(size.x, size.y, size.z) || 1;
+                    const targetSize = 6;
+                    const scale = targetSize / maxSide;
+                    fishMesh.scale.setScalar(scale);
+
+                    fishMesh.traverse((node) => {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                        }
+                    });
+                } else {
+                    const bodyGeometry = new THREE.ConeGeometry(1.5, 6, 10);
+                    bodyGeometry.rotateZ(Math.PI / 2);
+                    const bodyMaterial = new THREE.MeshPhongMaterial({
+                        color: fishColors[colorIndex],
+                        shininess: 140,
+                        emissive: fishColors[colorIndex],
+                        emissiveIntensity: 0.35
+                    });
+                    fishMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+                    const tailGeometry = new THREE.ConeGeometry(1.2, 2, 6);
+                    tailGeometry.rotateZ(-Math.PI / 2);
+                    const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
+                    tail.position.x = -3.8;
+                    fishMesh.add(tail);
+                }
 
                 // Position fish in the lake
                 const angle = Math.random() * Math.PI * 2;
@@ -173,6 +207,7 @@
 
                 // Fish data
                 fishMesh.userData = {
+                    isFishRoot: true,
                     name: fishNames[colorIndex],
                     points: fishPoints[colorIndex],
                     speed: 0.03 + Math.random() * 0.05,
@@ -259,9 +294,15 @@
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
             
-            const intersects = raycaster.intersectObjects(fish);
+            const intersects = raycaster.intersectObjects(fish, true);
             if (intersects.length > 0) {
-                const hitFish = intersects[0].object;
+                let hitFish = intersects[0].object;
+                while (hitFish && !hitFish.userData.isFishRoot) {
+                    hitFish = hitFish.parent;
+                }
+                if (!hitFish) {
+                    return;
+                }
                 score += hitFish.userData.points;
                 document.getElementById('score').textContent = score;
                 
@@ -346,24 +387,40 @@
             const fishNames = ['Bluegill', 'Bass', 'Trout', 'Catfish', 'Golden Carp'];
             const fishPoints = [10, 25, 30, 40, 100];
 
-            const bodyGeometry = new THREE.ConeGeometry(1.5, 6, 10);
-            bodyGeometry.rotateZ(Math.PI / 2);
-            
             const colorIndex = Math.random() < 0.1 ? 4 : Math.floor(Math.random() * 4);
-            const bodyMaterial = new THREE.MeshPhongMaterial({ 
-                color: fishColors[colorIndex],
-                shininess: 140,
-                emissive: fishColors[colorIndex],
-                emissiveIntensity: 0.35
-            });
-            
-            const fishMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
-            
-            const tailGeometry = new THREE.ConeGeometry(1.2, 2, 6);
-            tailGeometry.rotateZ(-Math.PI / 2);
-            const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
-            tail.position.x = -3.8;
-            fishMesh.add(tail);
+            let fishMesh;
+
+            if (realisticFishTemplate) {
+                fishMesh = realisticFishTemplate.clone(true);
+                const bounds = new THREE.Box3().setFromObject(fishMesh);
+                const size = new THREE.Vector3();
+                bounds.getSize(size);
+                const maxSide = Math.max(size.x, size.y, size.z) || 1;
+                const targetSize = 6;
+                const scale = targetSize / maxSide;
+                fishMesh.scale.setScalar(scale);
+
+                fishMesh.traverse((node) => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                    }
+                });
+            } else {
+                const bodyGeometry = new THREE.ConeGeometry(1.5, 6, 10);
+                bodyGeometry.rotateZ(Math.PI / 2);
+                const bodyMaterial = new THREE.MeshPhongMaterial({
+                    color: fishColors[colorIndex],
+                    shininess: 140,
+                    emissive: fishColors[colorIndex],
+                    emissiveIntensity: 0.35
+                });
+                fishMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+                const tailGeometry = new THREE.ConeGeometry(1.2, 2, 6);
+                tailGeometry.rotateZ(-Math.PI / 2);
+                const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
+                tail.position.x = -3.8;
+                fishMesh.add(tail);
+            }
 
             const angle = Math.random() * Math.PI * 2;
             const radius = 10 + Math.random() * 60;
@@ -374,6 +431,7 @@
             );
 
             fishMesh.userData = {
+                isFishRoot: true,
                 name: fishNames[colorIndex],
                 points: fishPoints[colorIndex],
                 speed: 0.03 + Math.random() * 0.05,
