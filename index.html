@@ -101,10 +101,11 @@
             // Lake water (transparent)
             const waterGeometry = new THREE.CircleGeometry(80, 64);
             const waterMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x006994,
+                color: 0x3aa7d8,
                 transparent: true,
-                opacity: 0.12,
-                shininess: 100
+                opacity: 0.22,
+                shininess: 120,
+                depthWrite: false
             });
             const water = new THREE.Mesh(waterGeometry, waterMaterial);
             water.rotation.x = -Math.PI / 2;
@@ -165,7 +166,7 @@
                 const radius = 10 + Math.random() * 60;
                 fishMesh.position.set(
                     Math.cos(angle) * radius,
-                    1.2 + Math.random() * 2.5,
+                    -1.2 - Math.random() * 3.2,
                     Math.sin(angle) * radius
                 );
 
@@ -367,7 +368,7 @@
             const radius = 10 + Math.random() * 60;
             fishMesh.position.set(
                 Math.cos(angle) * radius,
-                1.2 + Math.random() * 2.5,
+                -1.2 - Math.random() * 3.2,
                 Math.sin(angle) * radius
             );
 
