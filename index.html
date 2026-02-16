@@ -210,9 +210,13 @@
                     isFishRoot: true,
                     name: fishNames[colorIndex],
                     points: fishPoints[colorIndex],
-                    speed: 0.03 + Math.random() * 0.05,
+                    speed: 0.04 + Math.random() * 0.06,
                     angle: Math.random() * Math.PI * 2,
-                    turnSpeed: 0.01 + Math.random() * 0.02
+                    turnSpeed: 0.01 + Math.random() * 0.025,
+                    minDepth: -0.4 - Math.random() * 1.2,
+                    maxDepth: -1.8 - Math.random() * 2.4,
+                    depthPhase: Math.random() * Math.PI * 2,
+                    nextTurnAt: performance.now() + 300 + Math.random() * 1400
                 };
 
                 fish.push(fishMesh);
@@ -434,9 +438,13 @@
                 isFishRoot: true,
                 name: fishNames[colorIndex],
                 points: fishPoints[colorIndex],
-                speed: 0.03 + Math.random() * 0.05,
+                speed: 0.04 + Math.random() * 0.06,
                 angle: Math.random() * Math.PI * 2,
-                turnSpeed: 0.01 + Math.random() * 0.02
+                turnSpeed: 0.01 + Math.random() * 0.025,
+                minDepth: -0.4 - Math.random() * 1.2,
+                maxDepth: -1.8 - Math.random() * 2.4,
+                depthPhase: Math.random() * Math.PI * 2,
+                nextTurnAt: performance.now() + 300 + Math.random() * 1400
             };
 
             fish.push(fishMesh);
@@ -486,15 +494,30 @@
 
                 // Animate fish
                 fish.forEach(f => {
-                    f.userData.angle += f.userData.turnSpeed;
+                    const now = performance.now();
+
+                    if (now > f.userData.nextTurnAt) {
+                        const turnAmount = (Math.random() - 0.5) * 1.2;
+                        f.userData.angle += turnAmount;
+                        f.userData.speed = 0.03 + Math.random() * 0.08;
+                        f.userData.nextTurnAt = now + 300 + Math.random() * 1600;
+                    }
+
+                    f.userData.angle += (Math.random() - 0.5) * f.userData.turnSpeed;
                     f.position.x += Math.cos(f.userData.angle) * f.userData.speed;
                     f.position.z += Math.sin(f.userData.angle) * f.userData.speed;
                     f.rotation.y = -f.userData.angle + Math.PI / 2;
 
-                    // Keep fish in lake
+                    const depthRange = f.userData.minDepth - f.userData.maxDepth;
+                    f.position.y = f.userData.minDepth - ((Math.sin(now * 0.0016 + f.userData.depthPhase) + 1) * 0.5 * depthRange);
+
+                    // Keep fish in lake with random bounce
                     const dist = Math.sqrt(f.position.x ** 2 + f.position.z ** 2);
                     if (dist > 70) {
-                        f.userData.angle += Math.PI;
+                        const toCenter = Math.atan2(-f.position.z, -f.position.x);
+                        f.userData.angle = toCenter + (Math.random() - 0.5) * 0.5;
+                        f.position.x *= 0.97;
+                        f.position.z *= 0.97;
                     }
                 });
 
