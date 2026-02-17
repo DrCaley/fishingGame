@@ -65,6 +65,7 @@
         let activeChunkZ = null;
         let score = 0;
         let gameStarted = false;
+        let gameOver = false;
         let yaw = 0, pitch = 0;
 
         const TILE_SIZE = 340;
@@ -446,6 +447,11 @@
         }
 
         function onClick(event) {
+            if (gameOver) {
+                window.location.reload();
+                return;
+            }
+
             if (!gameStarted) {
                 gameStarted = true;
                 document.getElementById('instructions').style.display = 'none';
@@ -457,44 +463,76 @@
             // Throw spear (raycasting)
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            
-            const intersects = raycaster.intersectObjects(fish, true);
-            if (intersects.length > 0) {
-                let hitFish = intersects[0].object;
+
+            const fishIntersects = raycaster.intersectObjects(fish, true);
+            const bearIntersects = raycaster.intersectObjects(bears, true);
+
+            const nearestFish = fishIntersects.length > 0 ? fishIntersects[0] : null;
+            const nearestBear = bearIntersects.length > 0 ? bearIntersects[0] : null;
+
+            if (nearestBear && (!nearestFish || nearestBear.distance < nearestFish.distance)) {
+                let hitBear = nearestBear.object;
+                while (hitBear && !hitBear.userData.isBear) {
+                    hitBear = hitBear.parent;
+                }
+                if (hitBear) {
+                    triggerLose();
+                    return;
+                }
+            }
+
+            if (nearestFish) {
+                let hitFish = nearestFish.object;
                 while (hitFish && !hitFish.userData.isFishRoot) {
                     hitFish = hitFish.parent;
                 }
-                if (!hitFish) {
-                    return;
-                }
+                if (hitFish) {
+                    const lakeCenterX = hitFish.userData.lakeCenterX;
+                    const lakeCenterZ = hitFish.userData.lakeCenterZ;
+                    const chunkKey = hitFish.userData.chunkKey;
 
-                const lakeCenterX = hitFish.userData.lakeCenterX;
-                const lakeCenterZ = hitFish.userData.lakeCenterZ;
-                const chunkKey = hitFish.userData.chunkKey;
-
-                score += hitFish.userData.points;
-                document.getElementById('score').textContent = score;
-                
-                // Remove fish
-                scene.remove(hitFish);
-                fish = fish.filter(f => f !== hitFish);
-                if (chunkKey && lakeFishByChunk.has(chunkKey)) {
-                    const lakeFish = lakeFishByChunk.get(chunkKey).filter(f => f !== hitFish);
-                    lakeFishByChunk.set(chunkKey, lakeFish);
-                }
-                
-                // Respawn after delay
-                setTimeout(() => {
-                    if (!chunkKey || worldChunks.has(chunkKey)) {
-                        const respawnedFish = createSingleFish(lakeCenterX, lakeCenterZ, chunkKey);
-                        if (chunkKey) {
-                            const lakeFish = lakeFishByChunk.get(chunkKey) || [];
-                            lakeFish.push(respawnedFish);
-                            lakeFishByChunk.set(chunkKey, lakeFish);
-                        }
+                    score += hitFish.userData.points;
+                    document.getElementById('score').textContent = score;
+                    
+                    // Remove fish
+                    scene.remove(hitFish);
+                    fish = fish.filter(f => f !== hitFish);
+                    if (chunkKey && lakeFishByChunk.has(chunkKey)) {
+                        const lakeFish = lakeFishByChunk.get(chunkKey).filter(f => f !== hitFish);
+                        lakeFishByChunk.set(chunkKey, lakeFish);
                     }
-                }, 3000);
+                    
+                    // Respawn after delay
+                    setTimeout(() => {
+                        if (!chunkKey || worldChunks.has(chunkKey)) {
+                            const respawnedFish = createSingleFish(lakeCenterX, lakeCenterZ, chunkKey);
+                            if (chunkKey) {
+                                const lakeFish = lakeFishByChunk.get(chunkKey) || [];
+                                lakeFish.push(respawnedFish);
+                                lakeFishByChunk.set(chunkKey, lakeFish);
+                            }
+                        }
+                    }, 3000);
+                }
             }
+        }
+
+        function triggerLose() {
+            gameOver = true;
+            gameStarted = false;
+
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+
+            const instructions = document.getElementById('instructions');
+            instructions.innerHTML = `
+                <h1>🐻 You lose!</h1>
+                <p>You hit a bear.</p>
+                <p>Final Score: ${score}</p>
+                <p><br><strong>Click to restart</strong></p>
+            `;
+            instructions.style.display = 'block';
         }
 
         function createSpearProjectile() {
